@@ -166,6 +166,32 @@ static NSMutableData *sDataFromConnection;
   }
 }
 
+// for encoding receipt data
+// ref http://stackoverflow.com/questions/1298998/verify-receipt-for-in-app-purchase
+- (NSString *)encode:(const uint8_t *)input length:(NSInteger)length {
+    static char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    NSMutableData *data = [NSMutableData dataWithLength:((length + 2) / 3) * 4];
+    uint8_t *output = (uint8_t *)data.mutableBytes;
+    for (NSInteger i = 0; i < length; i += 3) {
+        NSInteger value = 0;
+        for (NSInteger j = i; j < (i + 3); j++) {
+            value <<= 8;
+            if (j < length) {
+                value |= (0xFF & input[j]);
+            }
+        }
+        
+        NSInteger index = (i / 3) * 4;
+        output[index + 0] =                    table[(value >> 18) & 0x3F];
+        output[index + 1] =                    table[(value >> 12) & 0x3F];
+        output[index + 2] = (i + 1) < length ? table[(value >> 6)  & 0x3F] : '=';
+        output[index + 3] = (i + 2) < length ? table[(value >> 0)  & 0x3F] : '=';
+    }
+    return [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
+}
+
+
+
 - (void) verifyReceiptOnComplete:(void (^)(void)) completionBlock
                          onError:(void (^)(NSError*)) errorBlock
 {
@@ -183,8 +209,11 @@ static NSMutableData *sDataFromConnection;
 	
 	NSString *receiptDataString = [[NSString alloc] initWithData:self.receipt 
                                                       encoding:NSASCIIStringEncoding];
-  
-	NSString *postData = [NSString stringWithFormat:@"receiptdata=%@", receiptDataString];
+    // need encoding receipt data
+    NSString *receipEncodingString = [self encode:(uint8_t *)self.receipt.bytes
+                                      
+                                           length:self.receipt.length];
+	NSString *postData = [NSString stringWithFormat:@"receiptdata=%@", receipEncodingString];
 	
 	NSString *length = [NSString stringWithFormat:@"%d", [postData length]];	
 	[theRequest setValue:length forHTTPHeaderField:@"Content-Length"];	
